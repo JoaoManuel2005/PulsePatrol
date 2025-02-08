@@ -1,0 +1,16 @@
+.build
+.mbed
+projectfiles
+*.py*
+BUILD
+.clangd
+compile_commands.json
+.cache
+mbed-os
+TextLCD
+
+**.yml
+**.txt
+**.md
+LICENSE
+**.png
