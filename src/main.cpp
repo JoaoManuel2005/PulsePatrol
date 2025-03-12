@@ -1,223 +1,75 @@
-/* mbed Microcontroller Library
- * Copyright (c) 2019 ARM Limited
- * SPDX-License-Identifier: Apache-2.0
- */
-
 #include "mbed.h"
-#include "TextLCD.h"
 #include "platform/mbed_thread.h"
-#include "Switch.hpp"
 #include <memory.h>
 
-// AnalogIn Ain(p17);
-// AnalogOut Aout(p18);
-DigitalOut Dout(p16);
-// DigitalIn Din(p15);
+#include "compFilter.hpp"
+#include "Sensor.hpp"
+#include "LCD.hpp"
 
-Timer timer;
+const float PEAK_THRESHOLD = 1000;
+const float LOW_THRESHOLD = 500;
+const int MAX_BPM_SAMPLES = 5;
 
-// TextLCD lcd(p26, p25, p24, p23, p22, p21, TextLCD::LCD16x2);
-
-// //FDRM PTD2 = MOSI, PTD1 = SCLK, LOAD = PTDO (digital pin);
-// //LPC1768 mosi = p5, sclk = p7, load = p8;
-// SPI max72_spi(p5, NC, p7);
-// //SPI max72_spi(PTD2, NC, PTD1);
-
-DigitalOut load(p8); //will provide the load signal
-//DigitalOut load(PTD0); //will provide the load signal
-
-DigitalOut LEDout(LED1); //will provide the load signal
-DigitalOut LEDout2(LED2); //will provide the load signal
-DigitalOut LEDout3(LED3); //will provide the load signal
-DigitalOut LEDout4(LED4); //will provide the load signal
-
-
-
-// BufferedSerial serial(USBTX, USBRX ,115200);
-// //SerialStream<BufferedSerial> pc(serial);
-
-// #define max7219_reg_noop         0x00
-// #define max7219_reg_digit0       0x01
-// #define max7219_reg_digit1       0x02
-// #define max7219_reg_digit2       0x03
-// #define max7219_reg_digit3       0x04
-// #define max7219_reg_digit4       0x05
-// #define max7219_reg_digit5       0x06
-// #define max7219_reg_digit6       0x07
-// #define max7219_reg_digit7       0x08
-// #define max7219_reg_decodeMode   0x09
-// #define max7219_reg_intensity    0x0a
-// #define max7219_reg_scanLimit    0x0b
-// #define max7219_reg_shutdown     0x0c
-// #define max7219_reg_displayTest  0x0f
-
-#define LOW 0
-#define HIGH 1
-
-// char  pattern_diagonal[8] = { 0x01, 0x2,0x4,0x08,0x10,0x20,0x40,0x80};
-// char  pattern_square[8] = { 0xff, 0x81,0x81,0x81,0x81,0x81,0x81,0xff};  
-// char  pattern_star[8] = { 0x04, 0x15, 0x0e, 0x1f, 0x0e, 0x15, 0x04, 0x00};
-
-// /*
-// Write to the maxim via SPI
-// args register and the column data
-// */
-// void write_to_max( int reg, int col)
-// {
-//     load = LOW;            // begin
-//     max72_spi.write(reg);  // specify register
-//     max72_spi.write(col);  // put data
-//     load = HIGH;           // make sure data is loaded (on rising edge of LOAD/CS)
-//     //pc.printf("Writing\n");
-// }
-
-// //writes 8 bytes to the display  
-// void pattern_to_display(char *testdata){
-//     int cdata; 
-//     for(int idx = 0; idx <= 7; idx++) {
-//         cdata = testdata[idx]; 
-//         write_to_max(idx+1,cdata);
-//     }
-// } 
- 
-
-// void setup_dot_matrix ()
-// {
-//     // initiation of the max 7219
-//     // SPI setup: 8 bits, mode 0
-//     max72_spi.format(8, 0);
-     
-  
-  
-//        max72_spi.frequency(100000); //down to 100khx easier to scope ;-)
-      
-
-//     write_to_max(max7219_reg_scanLimit, 0x07);
-//     write_to_max(max7219_reg_decodeMode, 0x00);  // using an led matrix (not digits)
-//     write_to_max(max7219_reg_shutdown, 0x01);    // not in shutdown mode
-//     write_to_max(max7219_reg_displayTest, 0x00); // no display test
-//     for (int e=1; e<=8; e++) {    // empty registers, turn all LEDs off
-//         write_to_max(e,0);
-//     }
-//    // maxAll(max7219_reg_intensity, 0x0f & 0x0f);    // the first 0x0f is the value you can set
-//      write_to_max(max7219_reg_intensity,  0x08);     
- 
-// }
-
-// void clear(){
-//      for (int e=1; e<=8; e++) {    // empty registers, turn all LEDs off
-//         write_to_max(e,0);
-//     }
-// }
-//wait_ms has been depreciated
-//ThisThread::sleep_for(BLINKING_RATE) is now used
+bool peakDetected = false;
+float lastPeakTime = 0;
+float beatIntervals[MAX_BPM_SAMPLES] = {0};
+int beatIndex = 0;
 
 int main()
 {
+    Sensor heartBeatSensor;
+    compFilter filter;
+    Timer timer;
+    DigitalOut led(LED1);
+    LCD lcd;
+
     timer.start();
-    Switch lol(timer);
+    int bpm = 0;
 
-    // Ain.set_reference_voltage(5.0);
-    // setup_dot_matrix ();      /* setup matric */
-    while (1)
+    while(1)
     {
-        if (lol.read() == SwitchState::ON)
+        heartBeatSensor.read();
+        filter.update(heartBeatSensor.getY());
+        float y = filter.getY();
+        float baseline = filter.getMovingAverage();
+
+        if ((y > baseline + PEAK_THRESHOLD) && !peakDetected)
         {
-            Dout = 1;
+            peakDetected = true;
+            led = 1;
+
+            float currentTime = timer.read();
+            float interval = currentTime - lastPeakTime;
+            lastPeakTime = currentTime;
+
+            if (beatIndex < MAX_BPM_SAMPLES) {
+                beatIntervals[beatIndex] = interval;
+                beatIndex++;
+            } else {
+                // Shift buffer for new values
+                for (int i = 0; i < MAX_BPM_SAMPLES - 1; i++) {
+                    beatIntervals[i] = beatIntervals[i + 1];
+                }
+                beatIntervals[MAX_BPM_SAMPLES - 1] = interval;
+            }
+
+            // Compute average interval and BPM
+            float avgInterval = 0;
+            for (int i = 0; i < beatIndex; i++) {
+                avgInterval += beatIntervals[i];
+            }
+            avgInterval /= beatIndex;
+
+            bpm = (int)(60.0 / avgInterval);
+            lcd.write(bpm);
         }
-        else
+
+        if (y < baseline + LOW_THRESHOLD) 
         {
-            Dout = 0;
+            peakDetected = false;
+            led = 0; 
         }
 
-        // Dout = Din;
-        // if (lol.read() == SwitchState::ON)
-        // {
-        //     LEDout = HIGH;
-        //     thread_sleep_for(1000);
-        //     LEDout2 = HIGH;
-        //     thread_sleep_for(1000);
-        //     LEDout3 = HIGH;
-        //     thread_sleep_for(1000);
-        //     LEDout4 = HIGH;
-        //     thread_sleep_for(1000);
-        // }
-
-        // if (lol.read() == SwitchState::OFF)
-        // {
-        //     LEDout = LOW;
-        //     thread_sleep_for(1000);
-        //     LEDout2 = LOW;
-        //     thread_sleep_for(1000);
-        //     LEDout3 = LOW;
-        //     thread_sleep_for(1000);
-        //     LEDout4 = LOW;
-        //     thread_sleep_for(1000);
-        // }
-
-        // // lcd.printf("lol");
-        // float voltage = Ain.read();
-        // if (voltage == 0)
-        // {
-        //     Aout = 0;
-        // }
-        // else if (voltage < 0.125)
-        // {
-        //     Aout = 0.125;
-        // }
-        // else if (voltage < 0.25)
-        // {
-        //     Aout = 0.25;
-        // }
-        // else if (voltage < 0.375)
-        // {
-        //     Aout = 0.375;
-        // }
-        // else if (voltage < 0.5)
-        // {
-        //     Aout = 0.5;
-        // }
-        // else if (voltage < 0.625)
-        // {
-        //     Aout = 0.635;
-        // }
-        // else if (voltage < 0.75)
-        // {
-        //     Aout = 0.75;
-        // }
-        // else if (voltage < 0.875)
-        // {
-        //     Aout = 0.875;
-        // }
-        // else
-        // {
-        //     Aout = 1;
-        // }
-
-        // unsigned short voltage = Ain.read_u16();
-        // Aout.write_u16(voltage);
-
-        // lcd.setAddress(0,0);
-        // lcd.printf("%d", voltage);
-
-        //da_star();
-
-
-
-        // pattern_to_display(pattern_diagonal);
-        // LEDout = HIGH;
-        // thread_sleep_for(1000);
-        // LEDout = LOW;
-        // //pc.printf("Hello World\n");
-        // pattern_to_display(pattern_square);
-        // thread_sleep_for(1000);
-        // LEDout = HIGH;
-        // pattern_to_display(pattern_star);
-        // thread_sleep_for(1000);
-        // LEDout = LOW;
-        // thread_sleep_for(1000);
-        // clear();
+        ThisThread::sleep_for(10ms);
     }
-
 }
-
