@@ -1,12 +1,12 @@
 #ifndef COMP_FILTER_HPP
 #define COMP_FILTER_HPP
 
-#define MOVING_AVG_WINDOW 50
+#define MOVING_AVG_WINDOW 1000
 
 class compFilter
 {
     private:
-        float alpha = 0.5;
+        float alpha = 0.50;
         float y = 0;
         int bufferIndex = 0;
         float movingAvgBuffer[MOVING_AVG_WINDOW] = {0}; 

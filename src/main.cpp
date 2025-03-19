@@ -2,18 +2,70 @@
 #include "platform/mbed_thread.h"
 #include <memory.h>
 
+#include <chrono>
+
 #include "compFilter.hpp"
 #include "Sensor.hpp"
 #include "LCD.hpp"
+#include "LedMatrix.hpp"
 
 const float PEAK_THRESHOLD = 1000;
 const float LOW_THRESHOLD = 500;
-const int MAX_BPM_SAMPLES = 5;
+const int MAX_BPM_SAMPLES = 500;
+// const int MAX_PEAKS_SAMPLES = 50;
+
+AnalogOut Aout(p18);
 
 bool peakDetected = false;
 float lastPeakTime = 0;
 float beatIntervals[MAX_BPM_SAMPLES] = {0};
 int beatIndex = 0;
+
+// float peaks[MAX_PEAKS_SAMPLES];
+
+LedMatrix ledMatrix;
+Thread ledThread;
+
+LCD lcd;    
+Thread lcdThread;
+
+Mutex bpmMutex;
+volatile int bpm = 60;
+
+// BufferedSerial pc(USBTX, USBRX, 115200);
+
+void led_display_task()
+{
+    while (true)
+    {
+        bpmMutex.lock();
+        int currentBPM = bpm;
+        bpmMutex.unlock();
+
+        // char buffer[16];
+        // sprintf(buffer, "LED BPM: %d\n", currentBPM);
+        // pc.write(buffer, strlen(buffer));
+
+        ledMatrix.display(currentBPM);
+    }
+}
+
+void lcd_display_task()
+{
+    while (true)
+    {
+        bpmMutex.lock();
+        int currentBPM = bpm;
+        bpmMutex.unlock();
+
+        // char buffer[16];
+        // sprintf(buffer, "LCD BPM: %d\n", currentBPM);
+        // pc.write(buffer, strlen(buffer));
+
+        lcd.write(currentBPM);
+        ThisThread::sleep_for(100ms);
+    }
+}
 
 int main()
 {
@@ -21,24 +73,30 @@ int main()
     compFilter filter;
     Timer timer;
     DigitalOut led(LED1);
-    LCD lcd;
+
+    ledMatrix.setup_dot_matrix();
+    ledThread.start(led_display_task);
+
+    lcdThread.start(lcd_display_task);
 
     timer.start();
-    int bpm = 0;
 
     while(1)
     {
         heartBeatSensor.read();
         filter.update(heartBeatSensor.getY());
+
         float y = filter.getY();
         float baseline = filter.getMovingAverage();
+        Aout.write_u16(static_cast<unsigned short>(y));
 
         if ((y > baseline + PEAK_THRESHOLD) && !peakDetected)
         {
             peakDetected = true;
             led = 1;
 
-            float currentTime = timer.read();
+            int currentTime = std::chrono::duration_cast<std::chrono::milliseconds>(timer.elapsed_time()).count();
+
             float interval = currentTime - lastPeakTime;
             lastPeakTime = currentTime;
 
@@ -52,16 +110,19 @@ int main()
                 }
                 beatIntervals[MAX_BPM_SAMPLES - 1] = interval;
             }
-
             // Compute average interval and BPM
-            float avgInterval = 0;
+            int avgInterval = 0;
+
             for (int i = 0; i < beatIndex; i++) {
                 avgInterval += beatIntervals[i];
             }
-            avgInterval /= beatIndex;
+            // avgInterval /= beatIndex;
+            int avg = avgInterval / beatIndex;
 
-            bpm = (int)(60.0 / avgInterval);
-            lcd.write(bpm);
+            bpmMutex.lock();
+            bpm = 60000 / avg;
+            bpmMutex.unlock();
+
         }
 
         if (y < baseline + LOW_THRESHOLD) 
@@ -69,7 +130,6 @@ int main()
             peakDetected = false;
             led = 0; 
         }
-
         ThisThread::sleep_for(10ms);
     }
 }
