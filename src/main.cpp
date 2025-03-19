@@ -8,6 +8,7 @@
 #include "Sensor.hpp"
 #include "LCD.hpp"
 #include "LedMatrix.hpp"
+#include "PPThreads.hpp"
 
 const float PEAK_THRESHOLD = 1000;
 const float LOW_THRESHOLD = 500;
@@ -21,51 +22,11 @@ float lastPeakTime = 0;
 float beatIntervals[MAX_BPM_SAMPLES] = {0};
 int beatIndex = 0;
 
-// float peaks[MAX_PEAKS_SAMPLES];
+// float peaks[MAX_PEAKS_SAMPLES];  
 
-LedMatrix ledMatrix;
-Thread ledThread;
+BufferedSerial pc(USBTX, USBRX, 115200);
 
-LCD lcd;    
-Thread lcdThread;
-
-Mutex bpmMutex;
-volatile int bpm = 60;
-
-// BufferedSerial pc(USBTX, USBRX, 115200);
-
-void led_display_task()
-{
-    while (true)
-    {
-        bpmMutex.lock();
-        int currentBPM = bpm;
-        bpmMutex.unlock();
-
-        // char buffer[16];
-        // sprintf(buffer, "LED BPM: %d\n", currentBPM);
-        // pc.write(buffer, strlen(buffer));
-
-        ledMatrix.display(currentBPM);
-    }
-}
-
-void lcd_display_task()
-{
-    while (true)
-    {
-        bpmMutex.lock();
-        int currentBPM = bpm;
-        bpmMutex.unlock();
-
-        // char buffer[16];
-        // sprintf(buffer, "LCD BPM: %d\n", currentBPM);
-        // pc.write(buffer, strlen(buffer));
-
-        lcd.write(currentBPM);
-        ThisThread::sleep_for(100ms);
-    }
-}
+Mutex serialMutex;
 
 int main()
 {
@@ -119,9 +80,20 @@ int main()
             // avgInterval /= beatIndex;
             int avg = avgInterval / beatIndex;
 
-            bpmMutex.lock();
-            bpm = 60000 / avg;
+            bpmMutex.trylock();
+            if (avg > 0) {
+                bpm = 60000 / avg;
+            } else {
+                bpm = 60; // Default to a safe value
+            }
             bpmMutex.unlock();
+
+            // serialMutex.trylock();
+            // char buffer[64];
+            // snprintf(buffer, sizeof(buffer) - 1, "avg %d \n", avg);
+            // buffer[sizeof(buffer) - 1] = '\0'; // Ensure null termination
+            // pc.write(buffer, strlen(buffer)); // Use strlen instead of sizeof
+            // serialMutex.unlock();
 
         }
 
