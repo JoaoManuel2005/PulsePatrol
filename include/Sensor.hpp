@@ -8,12 +8,12 @@
 class Sensor
 {
     private:
-        AnalogIn ADC = AnalogIn(PP_SENSOR_IN);
-        uint16_t y;
+        AnalogIn ADC = AnalogIn(PP_SENSOR_IN); // Analogue signal input from sensor
+        uint16_t y; // Digitised input signal
 
     public:
         void read();
-        const uint16_t getY();
+        uint16_t getY();
 };
 
 #endif // PP_SENSOR_HPP

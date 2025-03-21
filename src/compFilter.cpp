@@ -1,6 +1,10 @@
 #include "compFilter.hpp"
 
-
+/**
+ * @brief Runs complementary filter on new sensor data.
+ * Updates moving average with new sensor data
+ * @param x digitised sensor signal
+*/
 void compFilter::update(const float& x)
 {
     y = alpha * x + (1 - alpha) * y;
@@ -13,12 +17,18 @@ void compFilter::update(const float& x)
     movingAvg = movingAvgSum / MOVING_AVG_WINDOW;
 }
 
-const float compFilter::getY()
+/**
+ * Getter for filtered digitised sensor signal
+*/
+float compFilter::getY()
 {
     return y;
 }
 
-const float compFilter::getMovingAverage()
+/**
+ * Getter for filtered moving average
+*/
+float compFilter::getMovingAverage()
 {
     return movingAvg;
 }

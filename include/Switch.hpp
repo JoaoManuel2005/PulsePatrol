@@ -15,14 +15,15 @@ class Switch
 {
     private:
         InterruptIn m_sw;
-        uint64_t m_lastDebounceTime;
-        uint16_t m_debounceDelay = 2000;
+        uint32_t m_lastDebounceTime;
+        const uint32_t m_debounceDelay = 50;
         volatile SwitchState m_state;
-        Timer* m_timer;
+        Timer m_timer;
+        bool debounceFlag = false;
 
         void handleInterrupt();
     public:
-        Switch(Timer& timer);
+        Switch();
         SwitchState read();
 };
 

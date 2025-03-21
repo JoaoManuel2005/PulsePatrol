@@ -1,17 +1,16 @@
 #include "LedMatrix.hpp"
 #include "Config.hpp"
 
-
-// LedMatrix::LedMatrix() : spi(SPI_MAX_MOSI, NC, SPI_MAX_LOAD), spiLoad(SPI_MAX_LOAD) {}
-
 LedMatrix::LedMatrix() : max_spi(p5, NC, p7), spiLoad(p8) {}
 
-
+/**
+ * Displays a heart on the LED matrix that pulses at the BPM rate
+*/
 void LedMatrix::display(int bpm)
 {
-    if (bpm <= 0) return; // Prevent divide-by-zero error
+    if (bpm <= 0) return; 
 
-    int delay_ms = 60000 / bpm;  // Convert BPM to milliseconds per beat
+    int delay_ms = 60000 / bpm; 
 
     pattern_to_display(pattern_heart);
     ThisThread::sleep_for(std::chrono::milliseconds(delay_ms)); 
@@ -20,14 +19,23 @@ void LedMatrix::display(int bpm)
     ThisThread::sleep_for(std::chrono::milliseconds(delay_ms)); 
 }
 
+/**
+ * @brief Initiates SPI comm by bring CS low.
+ * Then we specify the register we want to write to. 
+ * Then we write the actual data and end the SPI by bringing CS high.
+*/
 void LedMatrix::write_to_max(int reg, int col)
 {
-    spiLoad = LOW;  // initiate SPI comm by bringing CS low
-    max_spi.write(reg); // sepcify register
-    max_spi.write(col); // write data
-    spiLoad = HIGH; // end SPI comm by bringing CS high
+    spiLoad = LOW;
+    max_spi.write(reg);
+    max_spi.write(col); 
+    spiLoad = HIGH;
 }
 
+/**
+ * @brief Displays a pattern on the LED matrix
+ * Loops through the patter array and writes it to the MAX
+*/
 void LedMatrix:: pattern_to_display(char *pattern)
 {
     int cdata; 
@@ -39,12 +47,17 @@ void LedMatrix:: pattern_to_display(char *pattern)
     }
 } 
 
+/**
+ * @brief Setups the LED matrix
+ * Sets SPI up in mode 0, 8 bits
+ * Sets the frequency to 100kHz
+ * Configure the MAX to LED Matrix mode
+ * Clear the LED Matrix by clearing all registers
+*/
 void LedMatrix::setup_dot_matrix()
 {
-    // initiation of the max 7219
-    // SPI setup: 8 bits, mode 0
     max_spi.format(8, 0);
-    max_spi.frequency(100000); //down to 100khx easier to scope ;-)
+    max_spi.frequency(100000);
     
     write_to_max(max7219_reg_scanLimit, 0x07);
     write_to_max(max7219_reg_decodeMode, 0x00);  // using an led matrix (not digits)
@@ -53,16 +66,19 @@ void LedMatrix::setup_dot_matrix()
 
     for (int e=1; e<=8; e++) 
     {   
-        write_to_max(e,0);  // empty registers, turn all LEDs off
+        write_to_max(e,0);
     }
 
     write_to_max(max7219_reg_intensity,  0x08);     
 }
 
+/**
+ * @brief Clear LED Matrix by clearing all registers
+*/
 void LedMatrix::clear()
 {
     for (int e=1; e<=8; e++) 
     {    
-        write_to_max(e,0); // empty registers, turn all LEDs off
+        write_to_max(e,0); 
     }
 }

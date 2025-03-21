@@ -9,11 +9,11 @@
 #include "LCD.hpp"
 #include "LedMatrix.hpp"
 #include "PPThreads.hpp"
+#include "Switch.hpp"
 
 const float PEAK_THRESHOLD = 1000;
 const float LOW_THRESHOLD = 500;
 const int MAX_BPM_SAMPLES = 500;
-// const int MAX_PEAKS_SAMPLES = 50;
 
 AnalogOut Aout(p18);
 
@@ -22,18 +22,20 @@ float lastPeakTime = 0;
 float beatIntervals[MAX_BPM_SAMPLES] = {0};
 int beatIndex = 0;
 
-// float peaks[MAX_PEAKS_SAMPLES];  
-
-BufferedSerial pc(USBTX, USBRX, 115200);
-
-Mutex serialMutex;
-
+/**
+ * @brief Main BPM calculation logic
+ * Heart beat sensor object reads analogue input voltage, digitises it
+ * Complementary filter filters the digitised signal, and keeps a moving average of the signal
+ * If the digitised signal > moving average + a peak threshold then we say we had a peak
+ * We keep track of the last 500 periods between peaks and calculate the average period between peaks
+ * Then: BPM = 60 / average period between peaks in seconds
+*/
 int main()
 {
     Sensor heartBeatSensor;
     compFilter filter;
     Timer timer;
-    DigitalOut led(LED1);
+    DigitalOut led(LED2);
 
     ledMatrix.setup_dot_matrix();
     ledThread.start(led_display_task);
@@ -41,6 +43,8 @@ int main()
     lcdThread.start(lcd_display_task);
 
     timer.start();
+
+    swThread.start(switch_task);
 
     while(1)
     {
@@ -65,36 +69,25 @@ int main()
                 beatIntervals[beatIndex] = interval;
                 beatIndex++;
             } else {
-                // Shift buffer for new values
                 for (int i = 0; i < MAX_BPM_SAMPLES - 1; i++) {
                     beatIntervals[i] = beatIntervals[i + 1];
                 }
                 beatIntervals[MAX_BPM_SAMPLES - 1] = interval;
             }
-            // Compute average interval and BPM
             int avgInterval = 0;
 
             for (int i = 0; i < beatIndex; i++) {
                 avgInterval += beatIntervals[i];
             }
-            // avgInterval /= beatIndex;
             int avg = avgInterval / beatIndex;
 
             bpmMutex.trylock();
             if (avg > 0) {
                 bpm = 60000 / avg;
             } else {
-                bpm = 60; // Default to a safe value
+                bpm = 60; 
             }
             bpmMutex.unlock();
-
-            // serialMutex.trylock();
-            // char buffer[64];
-            // snprintf(buffer, sizeof(buffer) - 1, "avg %d \n", avg);
-            // buffer[sizeof(buffer) - 1] = '\0'; // Ensure null termination
-            // pc.write(buffer, strlen(buffer)); // Use strlen instead of sizeof
-            // serialMutex.unlock();
-
         }
 
         if (y < baseline + LOW_THRESHOLD) 
@@ -102,6 +95,7 @@ int main()
             peakDetected = false;
             led = 0; 
         }
+
         ThisThread::sleep_for(10ms);
     }
 }

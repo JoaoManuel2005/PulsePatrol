@@ -15,8 +15,8 @@ class compFilter
 
     public:
         void update(const float& x);
-        const float getY();
-        const float getMovingAverage();
+        float getY();
+        float getMovingAverage();
 
 };
 
